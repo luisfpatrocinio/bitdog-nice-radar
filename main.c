@@ -10,6 +10,7 @@
 #include "text.h"
 #include "buttons.h"
 #include "approach.h"
+#include "buzzer.h"
 
 bool showingDistance = false;
 int buttonCooldown = 0;
@@ -24,6 +25,19 @@ int forcedPerson = 2; // Forçar a pessoa a ser legal ou não (0 = legal, 1 = n�
 bool stopForcedPerson = false;
 
 bool showingResults = false;
+
+uint note_array[] = {
+    261, // C4
+    293, // D4
+    329, // E4
+    349, // F4
+    392, // G4
+    440, // A4
+    493, // B4
+    523  // C5
+};
+
+const int num_notes = sizeof(note_array) / sizeof(note_array[0]);
 
 bool changeForcedPerson()
 {
@@ -114,6 +128,7 @@ void setup()
     initI2C();
     initDisplay();
     initializeButtons();
+    initBuzzerPWM();                          // Inicializa o buzzer
     setButtonCallback(handleButtonGpioEvent); // Configura o callback para os botões
 
     add_repeating_timer_ms(12, repeatingTimerCallback, NULL, &timer);
@@ -175,6 +190,10 @@ int main()
         {
             if (distance < 8.0f)
             {
+                uint32_t ms = to_ms_since_boot(get_absolute_time());
+                int index = (ms / 50) % num_notes;
+                playTone(note_array[index], 100); // Toca um tom aleatório
+
                 if (!scanning)
                 {
                     if (forcedPerson == 2)
