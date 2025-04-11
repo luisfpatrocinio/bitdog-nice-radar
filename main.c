@@ -23,6 +23,8 @@ struct repeating_timer changeForcedPersonTimer;
 int forcedPerson = 2; // Forçar a pessoa a ser legal ou não (0 = legal, 1 = não legal, 2 = aleatório)
 bool stopForcedPerson = false;
 
+bool showingResults = false;
+
 bool changeForcedPerson()
 {
     if (stopForcedPerson) // Verifica se o timer deve ser interrompido
@@ -74,6 +76,36 @@ void handleButtonGpioEvent(uint gpio, uint32_t events)
     }
 }
 
+void showResults(int personStatus, int randomWordIndex, int textY)
+{
+    const char *positiveAdjectives[] = {
+        "muito macho",
+        "heterossexual",
+        "homem de verdade",
+        "nunca foi gay",
+        "que cara bom"};
+
+    const char *negativeAdjectives[] = {
+        "bicha gladiadora",
+        "homossexual",
+        "LGBTQIAPN+",
+        "curte uma brincadeira",
+        "rebola lentinho"};
+
+    setAllLedsBrightness(0); // Desliga todos os LEDs
+    if (personStatus)
+    {
+        setLedBrightness(LED_GREEN_PIN, ledIntensity);                // Verde
+        drawTextCentered(positiveAdjectives[randomWordIndex], textY); // Desenha no display
+    }
+    else
+    {
+        setLedBrightness(LED_RED_PIN, ledIntensity / 2);              // Vermelho
+        setLedBrightness(LED_BLUE_PIN, ledIntensity);                 // Vermelho
+        drawTextCentered(negativeAdjectives[randomWordIndex], textY); // Desenha no display
+    }
+}
+
 void setup()
 {
     stdio_init_all();
@@ -95,6 +127,7 @@ int main()
     setup();
 
     absolute_time_t loadingTime = nil_time;
+    absolute_time_t clearMessageTime = nil_time;
 
     bool scanning = false;
     bool nicePerson = false;
@@ -103,30 +136,20 @@ int main()
     static int textY = -8;            // Posição Y do texto
     int randomWordIndex = 0;
 
-    const char *positiveAdjectives[] = {
-        "muito macho",
-        "heterossexual",
-        "homem de verdade",
-        "nunca foi gay",
-        "que cara bom"};
-
-    const char *negativeAdjectives[] = {
-        "bicha gladiadora",
-        "homossexual",
-        "LGBTQIAPN+",
-        "curte uma brincadeira",
-        "rebola lentinho"};
-
     while (true)
     {
-        float distance = measureDistance();
-
         clearDisplay();
+        float distance = measureDistance();
+        absolute_time_t currentTime = get_absolute_time();
+        int destTextY = 8; // Posição Y do texto
 
+        // Interromper troca aleatória caso esteja escaneando.
         stopForcedPerson = scanning;
 
-        buttonCooldown = buttonCooldown > 0 ? buttonCooldown - 1 : 0; // Decrementa o cooldown se estiver ativo
+        // Decrementa o cooldown se estiver ativo
+        buttonCooldown = buttonCooldown > 0 ? buttonCooldown - 1 : 0;
 
+        // DEBUG
         if (showingDistance)
         {
             char buffer[20];                                                 // Buffer para armazenar a string formatada
@@ -137,73 +160,75 @@ int main()
             drawText(0, SCREEN_HEIGHT - 8, _forcedPersonText);                          // Desenha a distância no display
         }
 
-        int destTextY = 8; // Posição Y do texto
-
-        if (distance < 8.0f)
+        if (absolute_time_diff_us(currentTime, clearMessageTime) <= 0)
         {
-            if (!scanning)
-            {
-                if (forcedPerson == 2)
-                    nicePerson = rand() % 2 == 0;
-                else if (forcedPerson == 1)
-                    nicePerson = false;
-                else if (forcedPerson == 0)
-                    nicePerson = true;
-                randomWordIndex = rand() % 5;
-                scanning = true;
-
-                int randomLoadingTime = 2 + rand() % 5;
-                loadingTime = make_timeout_time_ms(randomLoadingTime * 1000);
-            }
-
-            // Se ainda estiver carregando:
-            absolute_time_t currentTime = get_absolute_time(); // Obtém o tempo atual
-            if (absolute_time_diff_us(loadingTime, currentTime) <= 0)
-            {
-                drawTextCentered("Mantenha...", textY);      // Desenha "Carregando..." no display
-                drawWave(SCREEN_HEIGHT / 2, sinSpeed, 10.0); // Desenha uma onda na parte inferior do display
-                setAllLedsBrightness(ledIntensity);          // Define o brilho dos LEDs
-                sinSpeed = approach(sinSpeed, 20, 0.369);    // Aproxima a velocidade da onda
-            }
-            else if (scanning)
-            {
-                setAllLedsBrightness(0);                           // Desliga todos os LEDs
-                sinAmplitude = approach(sinAmplitude, 0.0, 0.369); // Aproxima a amplitude da onda
-                destTextY = SCREEN_HEIGHT / 2 - 10;                // Posição Y do texto
-                if (nicePerson)
-                {
-                    setLedBrightness(LED_GREEN_PIN, ledIntensity);                // Verde
-                    drawTextCentered(positiveAdjectives[randomWordIndex], textY); // Desenha no display
-                }
-                else
-                {
-                    setLedBrightness(LED_RED_PIN, ledIntensity / 2);              // Vermelho
-                    setLedBrightness(LED_BLUE_PIN, ledIntensity);                 // Vermelho
-                    drawTextCentered(negativeAdjectives[randomWordIndex], textY); // Desenha no display
-                }
-            }
+            showingResults = false;
         }
-        else if (distance < 15.0f)
-        {
-            turnOffLeds();                                // Desliga os LEDs se a distância for maior que 50 cm
-            setAllLedsBrightness(ledIntensity / 5);       // Desliga todos os LEDs
-            drawTextCentered("Aproxime-se mais.", textY); // Desenha no display
 
-            scanning = false;
-            sinSpeed = approach(sinSpeed, 6.0, 2.0);
-            sinAmplitude = approach(sinAmplitude, 8.0, 1.0); // Aproxima a amplitude da onda
+        if (showingResults)
+        {
+            showResults(nicePerson, randomWordIndex, textY);
+            sinAmplitude = approach(sinAmplitude, 0.0, 0.369); // Aproxima a amplitude da onda
+            destTextY = SCREEN_HEIGHT / 2 - 10;                // Posição Y do texto
         }
         else
         {
-            turnOffLeds();                           // Desliga os LEDs se a distância for maior que 50 cm
-            setAllLedsBrightness(0);                 // Desliga todos os LEDs
-            drawTextCentered("Aproxime-se.", textY); // Desenha no display
+            if (distance < 8.0f)
+            {
+                if (!scanning)
+                {
+                    if (forcedPerson == 2)
+                        nicePerson = rand() % 2 == 0;
+                    else if (forcedPerson == 1)
+                        nicePerson = false;
+                    else if (forcedPerson == 0)
+                        nicePerson = true;
+                    randomWordIndex = rand() % 5;
+                    scanning = true;
 
-            scanning = false;
-            sinSpeed = approach(sinSpeed, 1.0, 2.0);
-            float _fakeAmplitude = (forcedPerson == 0) ? 8.0 : (forcedPerson == 1) ? 12.0
-                                                                                   : 10.0;
-            sinAmplitude = approach(sinAmplitude, _fakeAmplitude, 0.25); // Aproxima a amplitude da onda
+                    int randomLoadingTime = 2 + rand() % 5;
+                    loadingTime = make_timeout_time_ms(randomLoadingTime * 1000);
+                }
+
+                // Se ainda estiver carregando:
+                if (absolute_time_diff_us(loadingTime, currentTime) <= 0)
+                {
+                    drawTextCentered("Mantenha...", textY);      // Desenha "Carregando..." no display
+                    drawWave(SCREEN_HEIGHT / 2, sinSpeed, 10.0); // Desenha uma onda na parte inferior do display
+                    setAllLedsBrightness(ledIntensity);          // Define o brilho dos LEDs
+                    sinSpeed = approach(sinSpeed, 20, 0.369);    // Aproxima a velocidade da onda
+                }
+                else
+                {
+                    if (!showingResults)
+                    {
+                        showingResults = true;
+                        clearMessageTime = make_timeout_time_ms(4500);
+                    }
+                }
+            }
+            else if (distance < 15.0f)
+            {
+                turnOffLeds();                                // Desliga os LEDs se a distância for maior que 50 cm
+                setAllLedsBrightness(ledIntensity / 5);       // Desliga todos os LEDs
+                drawTextCentered("Aproxime-se mais.", textY); // Desenha no display
+
+                scanning = false;
+                sinSpeed = approach(sinSpeed, 6.0, 2.0);
+                sinAmplitude = approach(sinAmplitude, 8.0, 1.0); // Aproxima a amplitude da onda
+            }
+            else
+            {
+                turnOffLeds();                           // Desliga os LEDs se a distância for maior que 50 cm
+                setAllLedsBrightness(0);                 // Desliga todos os LEDs
+                drawTextCentered("Aproxime-se.", textY); // Desenha no display
+
+                scanning = false;
+                sinSpeed = approach(sinSpeed, 1.0, 2.0);
+                float _fakeAmplitude = (forcedPerson == 0) ? 8.0 : (forcedPerson == 1) ? 12.0
+                                                                                       : 10.0;
+                sinAmplitude = approach(sinAmplitude, _fakeAmplitude, 0.25); // Aproxima a amplitude da onda
+            }
         }
 
         textY = approach(textY, destTextY, 1);               // Aproxima a posição Y do texto
