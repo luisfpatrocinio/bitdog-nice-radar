@@ -144,7 +144,7 @@ int main()
         int destTextY = 8; // Posição Y do texto
 
         // Interromper troca aleatória caso esteja escaneando.
-        stopForcedPerson = scanning;
+        stopForcedPerson = (distance < 15.0f) ? true : false; // Interrompe a troca aleatória se a distância for menor que 15 cm
 
         // Decrementa o cooldown se estiver ativo
         buttonCooldown = buttonCooldown > 0 ? buttonCooldown - 1 : 0;
