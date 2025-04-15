@@ -39,6 +39,7 @@
     "files.associations": {
         "stdlib.h": "c",
         "cstdlib": "c",
-        "algorithm": "c"
+        "algorithm": "c",
+        "pwm.h": "c"
     }
 }

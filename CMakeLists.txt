@@ -61,6 +61,7 @@ target_include_directories(radar PRIVATE
 target_link_libraries(radar 
         hardware_i2c
         hardware_pwm
+        pico_multicore
         )
 
 pico_add_extra_outputs(radar)

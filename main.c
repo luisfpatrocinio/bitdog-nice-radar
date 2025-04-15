@@ -2,6 +2,7 @@
 #include <stdlib.h>
 
 #include "pico/stdlib.h"
+#include "pico/multicore.h"
 
 #include "ultrassonic.h"
 #include "led.h"
@@ -10,6 +11,7 @@
 #include "text.h"
 #include "buttons.h"
 #include "approach.h"
+#include "buzzer.h"
 
 bool showingDistance = false;
 int buttonCooldown = 0;
@@ -25,12 +27,69 @@ bool stopForcedPerson = false;
 
 bool showingResults = false;
 
+float sinSpeed = 0.25; // Velocidade do movimento da onda
+
+bool playingSound = false;
+
+void core1Main()
+{
+    typedef struct
+    {
+        int frequency;
+        int duration;
+    } Note;
+
+    Note panther_theme[] = {
+        {622, 500},  // D#5 - seminima
+        {659, 750},  // E5 - seminima pontuada
+        {740, 250},  // F#5 - colcheia
+        {784, 750},  // G5 - seminima pontuada
+        {622, 250},  // D#5 - colcheia
+        {659, 250},  // E5 - colcheia
+        {740, 250},  // F#5 - colcheia
+        {784, 250},  // G5 - colcheia
+        {1046, 250}, // C6 - colcheia
+        {988, 250},  // B5 - colcheia
+        {659, 250},  // E5 - colcheia
+        {784, 250},  // G5 - colcheia
+        {988, 250},  // B5 - colcheia
+        {932, 1000}, // A#5 - mínima
+        {880, 250},  // A5 (81) colcheia escala 1
+        {784, 250},  // G5 (79)
+        {659, 250},  // E5 (76)
+        {587, 250},  // D5 (74)
+        {659, 1000}, // E5 (76) mínima
+    };
+
+    // Song currentSong = songs[currentSongIndex]; // Inicializa a música atual
+    // Note note_array = panther_theme; // Inicializa o array de notas
+    const int num_notes = sizeof(panther_theme) / sizeof(panther_theme[0]);
+
+    while (true)
+    {
+        if (playingSound)
+        {
+            for (int i = 0; i < num_notes; i++)
+            {
+                if (!playingSound)
+                    break; // Permite parar a música no meio
+                playTone(panther_theme[i].frequency, panther_theme[i].duration - sinSpeed * 5);
+                sleep_ms(10); // Pequeno delay entre notas (opcional)
+            }
+        }
+        else
+        {
+            sleep_ms(100); // Espera antes de verificar novamente
+        }
+    }
+}
+
 bool changeForcedPerson()
 {
     if (stopForcedPerson) // Verifica se o timer deve ser interrompido
         return 1;         // Se sim, retorna 0
     forcedPerson++;
-    forcedPerson = forcedPerson % 3; // Alterna entre 0, 1 e 2
+    forcedPerson = forcedPerson % 2; // Alterna entre 0, 1 e 2
     return 1;
 }
 
@@ -114,6 +173,7 @@ void setup()
     initI2C();
     initDisplay();
     initializeButtons();
+    initBuzzerPWM();                          // Inicializa o buzzer
     setButtonCallback(handleButtonGpioEvent); // Configura o callback para os botões
 
     add_repeating_timer_ms(12, repeatingTimerCallback, NULL, &timer);
@@ -126,12 +186,14 @@ int main()
 {
     setup();
 
+    multicore_launch_core1(core1Main);
+
     absolute_time_t loadingTime = nil_time;
     absolute_time_t clearMessageTime = nil_time;
 
     bool scanning = false;
     bool nicePerson = false;
-    static float sinSpeed = 0.25;     // Velocidade do movimento da onda
+
     static float sinAmplitude = 10.0; // Amplitude da onda
     static int textY = -8;            // Posição Y do texto
     int randomWordIndex = 0;
@@ -145,6 +207,8 @@ int main()
 
         // Interromper troca aleatória caso esteja escaneando.
         stopForcedPerson = (distance < 15.0f) ? true : false; // Interrompe a troca aleatória se a distância for menor que 15 cm
+
+        playingSound = stopForcedPerson && !showingResults;
 
         // Decrementa o cooldown se estiver ativo
         buttonCooldown = buttonCooldown > 0 ? buttonCooldown - 1 : 0;
@@ -175,6 +239,7 @@ int main()
         {
             if (distance < 8.0f)
             {
+                // playingSound = true;
                 if (!scanning)
                 {
                     if (forcedPerson == 2)
@@ -214,17 +279,18 @@ int main()
                 drawTextCentered("Aproxime-se mais.", textY); // Desenha no display
 
                 scanning = false;
-                sinSpeed = approach(sinSpeed, 6.0, 2.0);
+                sinSpeed = approach(sinSpeed, 6.0, 1.0);
                 sinAmplitude = approach(sinAmplitude, 8.0, 1.0); // Aproxima a amplitude da onda
             }
             else
             {
+                // playingSound = false;
                 turnOffLeds();                           // Desliga os LEDs se a distância for maior que 50 cm
                 setAllLedsBrightness(0);                 // Desliga todos os LEDs
                 drawTextCentered("Aproxime-se.", textY); // Desenha no display
 
                 scanning = false;
-                sinSpeed = approach(sinSpeed, 1.0, 2.0);
+                sinSpeed = approach(sinSpeed, 1.0, 1.0);
                 float _fakeAmplitude = (forcedPerson == 0) ? 8.0 : (forcedPerson == 1) ? 12.0
                                                                                        : 10.0;
                 sinAmplitude = approach(sinAmplitude, _fakeAmplitude, 0.25); // Aproxima a amplitude da onda
